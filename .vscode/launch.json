@@ -1,0 +1,40 @@
+{
+    // 使用 IntelliSense 了解相关属性。 
+    // 悬停以查看现有属性的描述。
+    // 欲了解更多信息，请访问: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: torchrun",
+            "type": "debugpy",
+            "request": "launch",
+            // "program": "/data1/autoco/anaconda3/envs/unico/lib/python3.10/site-packages/torch/distributed/run.py",
+            "program": "/data5/weixiaochen/.conda/envs/unico/lib/python3.11/site-packages/torch/distributed/run.py",
+            "args":[
+                "--standalone",
+                // "--master_port=29500",
+                // "--master_addr=localhost",
+                "--nproc_per_node=gpu",
+                "./train/train_ddp.py"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "7",
+                "HF_HOME": "/data5/weixiaochen/TransformerCache",
+            },
+        },
+        {
+            "name": "Python 当前文件",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "1",
+                "HF_HOME": "/data5/weixiaochen/TransformerCache",
+            },
+        }
+    ]
+}
