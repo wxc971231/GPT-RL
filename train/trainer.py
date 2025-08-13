@@ -20,10 +20,11 @@ from calflops import calculate_flops
 
 from data.data import build_dataloader
 from train.scheduler import EarlyStopping, OptimizerParamScheduler
+from model.llama import MyLlama, MyLlamaConfig
 from model.NanoGPT import NanoGPT, NanoGPTConfig
 from utils.utils_model import remove_compiled_prefix
 from utils.utils import set_seed, clean_print
-from eval.eval_score import eval_score_adder
+from eval.script_score import eval_score_adder, eval_score_multiplier
 
 @dataclass
 class Snapshot:
@@ -58,7 +59,8 @@ class Trainer:
         # build training components
         self._build_model()
         self.early_stopping = EarlyStopping(patience=args.early_stopping_patience, delta=args.early_stopping_delta)
-        self.optimizer = self.raw_model.configure_optimizers(self.args, self.local_rank)  
+        self.optimizer = self.raw_model.configure_optimizers(self.args, self.local_rank) if args.model == 'NanoGPT' else \
+                         self.raw_model.configure_optimizers()
         self.scheduler = OptimizerParamScheduler(self.args, self.optimizer)    
         self._init_model()
 
@@ -77,20 +79,35 @@ class Trainer:
 
         # eval setting
         self.eval_setting = {}
-        if self.args.dataset == 'adder':
+        if self.args.dataset in ['adder', 'multiplier']:
             self.eval_setting = {
                 'greedy': lambda: self._eval_score(sample=False),
                 # 'sample': lambda: self._eval_score(sample=True),
             }
 
     def _build_model(self):
+        pad_token_id = self.tokenizer.pad_token_id if self.tokenizer is not None else None
         if self.args.model == 'NanoGPT':
             model_args = {key: getattr(self.args, key) for key in [
-                'n_position', 'n_layer', 'n_head', 'n_embd', 'vocab_size', 'dropout', 'add_bias', 'weight_tying'
+                'n_position', 'n_layer', 'n_head', 'n_embed', 'vocab_size', 'dropout', 'dropout_attn', 'add_bias', 'weight_tying'
             ]}
-            gptconf = NanoGPTConfig(**model_args)
-            mask_out_token = self.tokenizer.pad_token_id if self.tokenizer is not None else None
-            self.raw_model = NanoGPT(gptconf, mask_out_token).to(self.local_rank).train()
+            model_args.update({'mask_out_token': pad_token_id})
+            gpt_conf = NanoGPTConfig(**model_args)
+            self.raw_model = NanoGPT(gpt_conf).to(self.local_rank).train()
+        elif self.args.model == 'llama':
+            model_args = {key: getattr(self.args, key) for key in [
+                'n_position', 'n_layer', 'n_q_head', 'n_kv_head', 'n_embed', 'vocab_size', 
+                'rms_norm_eps', 'weight_tying', 'dropout_attn', 'add_bias', 'lr_begin',
+                'adam_beta1', 'adam_beta2', 'adam_eps', 
+            ]}
+            model_args.update({
+                'pad_token_id': pad_token_id,
+                'mask_out_token': pad_token_id,
+                'weight_decay': self.args.wd_begin,
+            })
+            assert self.args.wd_decr_style == "constant"
+            llama_conf = MyLlamaConfig(**model_args)
+            self.raw_model = MyLlama(llama_conf).to(self.local_rank).train()
         else:
             raise Exception(f'{self.args.model} is not support currently')
     
@@ -109,7 +126,7 @@ class Trainer:
                 self.raw_model.load_state_dict(remove_compiled_prefix(snapshot.model_state))
                 self.optimizer.load_state_dict(snapshot.optimizer_state)
                 batch_factor = self.scheduler.load_state_dict(snapshot.scheduler_state)
-                self.ga_current = self.scheduler.get_ga_step()
+                self.ga_current = self.scheduler.ga_scheduler.step(0)
                 self.best_val_loss = snapshot.best_val_loss
                 self.batch_start = self.batch_now = {k: int(v * batch_factor) for k, v in snapshot.latest_batch.items()}
                 self.wandb_id = snapshot.wandb_id
@@ -136,7 +153,7 @@ class Trainer:
             override_args = dict(dropout=self.args.dropout) # only dropout can be overwritten
             self.raw_model = self.raw_model.from_pretrained(self.args.init_from, override_args)
             # override the created config params, so we can store them into checkpoint correctly
-            for k in ['n_layer', 'n_head', 'n_embd', 'block_size', 'bias', 'vocab_size']:
+            for k in ['n_layer', 'n_head', 'n_embed', 'block_size', 'bias', 'vocab_size']:
                 setattr(self.args, getattr(self.raw_model.config, k))
             clean_print(f"Resuming training from OpenAI GPT-2 weights: [{self.args.init_from}]", self.local_rank, '[Trainer]')
         else:
@@ -150,6 +167,13 @@ class Trainer:
         # check MACs and params quantity, which can only work befor torhc.compile
         flops, macs, params = self._check_MACs()
 
+        # reset weight tying in case the model is loaded from a snapshot or pretrained ckpt
+        if self.args.weight_tying:
+            if self.args.model == 'NanoGPT':
+                self.raw_model.transformer.wte.weight = self.raw_model.lm_head.weight
+            elif self.args.model == 'llama':
+                self.raw_model.lm_head.weight = self.raw_model.model.embed_tokens.weight
+           
         # compile the model
         if self.args.compile:
             clean_print("compiling the model... (takes a ~minute)", self.local_rank, '[Trainer]')
@@ -170,7 +194,7 @@ class Trainer:
         for data_type, dataset in dataset_dict.items():            
             dataloader = None if dataset is None else \
                 build_dataloader(
-                    self.args, dataset, is_eval=(data_type!='train'), 
+                    self.args, dataset, data_type, 
                     current_batch=self.batch_now[data_type], seed=self.seed
                 )
             dataloader_dict[data_type] = dataloader
@@ -191,7 +215,7 @@ class Trainer:
 
     def _check_MACs(self):
         def _get_dummy_data():
-            dataloader = build_dataloader(self.args, self.dataset_dict['val'], is_eval=True)
+            dataloader = build_dataloader(self.args, self.dataset_dict['val'], dataset_type='val')
             dummy_data = next(dataloader.__iter__())
             dummy_data = [x.to(self.local_rank) for x in dummy_data]
             data, _ = dummy_data[:-1], dummy_data[-1]
@@ -291,7 +315,7 @@ class Trainer:
     def _run_macro_batch(self, is_train=False):
         macro_batch_now = self.batch_now['train'] // self.args.batch_num
         if is_train:
-            total = self.args.eval_interval
+            total = self.args.batch_num
             desc = f"[GPU0-{self.world_size-1}]: Trianing batch {macro_batch_now}({self.batch_now['train']}-{self.batch_now['train'] + self.args.batch_num})"
             dataloader = self.dataloader_dict['train']
             dataloader.sampler.set_batch(self.batch_now['train'], macro_batch_now, True)     
@@ -342,11 +366,15 @@ class Trainer:
         desc_sample = f'sample{self.args.resample_times}' if sample else 'greedy'
         desc = f'Evaluating on {self.args.dataset}({desc_sample})'
         problem_dataloader = self.dataloader_dict['test']
-        total = self.args.problem_batch_num * self.args.problem_batch_size_per_gpu
+        total = self.args.total_problem_num
         
         if self.args.dataset == 'adder':
             assert sample == False, "Sample mode is not supported for adder dataset"
             correct_rate = eval_score_adder(self.raw_model, self.tokenizer, problem_dataloader, total, desc)
+            return correct_rate
+        elif self.args.dataset == 'multiplier':
+            assert sample == False, "Sample mode is not supported for multiplier dataset"
+            correct_rate = eval_score_multiplier(self.raw_model, self.tokenizer, problem_dataloader, total, desc)
             return correct_rate
         else:
             raise Exception(f"Unknown dataset: {self.args.dataset}")
@@ -357,7 +385,7 @@ class Trainer:
             dataset_visited_cnt = np.zeros(len(self.dataset_dict['train']), dtype=np.int8)
 
         # start training
-        for batch in range(self.batch_start['train'], self.args.train_iters + 1, self.args.eval_interval):  
+        for batch in range(self.batch_start['train'], self.args.train_iters + 1, self.args.batch_num):  
             self.batch_now['train'] = batch
             wandb_log_dict = {}
 
@@ -380,12 +408,18 @@ class Trainer:
                         if self.args.dataset == 'adder':
                             correct_rate = eval_func()
                             wandb_log_dict.update({f'{self.args.dataset}/correct_rate({setting})': correct_rate})
+                        elif self.args.dataset == 'multiplier':
+                            correct_rate = eval_func()
+                            wandb_log_dict.update({f'{self.args.dataset}/correct_rate({setting})': correct_rate})
                         else:
                             raise Exception(f"Unknown dataset: {self.args.dataset}")
 
             # exit point
             if batch == self.args.train_iters:
                 break
+            
+            # clear CUDA cache to avoid OOM
+            torch.cuda.empty_cache()
 
             # training process
             self.model.train()
@@ -395,6 +429,7 @@ class Trainer:
 
             wandb_log_dict.update({
                 f"{self.args.dataset}/batch": batch,
+                f"{self.args.dataset}/m_batch": int(batch/self.args.batch_num),
                 f'{self.args.dataset}/lr': new_lr,
                 f'{self.args.dataset}/wd': new_wd,
                 f'{self.args.dataset}/grad_norm': grad_norm,
@@ -423,6 +458,12 @@ class Trainer:
                 log_value_tensor = torch.mean(torch.stack(log_gather_list), axis=0, dtype=torch.float32)
                 for i, key in enumerate(sorted(wandb_log_dict)):
                     wandb_log_dict[key] = log_value_tensor[i].item()
+                
+                    # print training info
+                    if self.args.dataset == 'adder' and 'correct_rate' in key:
+                        clean_print(f"Adder {key} = {wandb_log_dict[key]:.4f}", self.local_rank, '[Trainer]')
+                    elif self.args.dataset == 'multiplier' and 'correct_rate' in key:
+                        clean_print(f"Multiplier {key} = {wandb_log_dict[key]:.4f}", self.local_rank, '[Trainer]')
 
                     # early-stopping and save-ckpt by val_loss 
                     if key == f'{self.args.dataset}/val_loss':

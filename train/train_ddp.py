@@ -11,7 +11,7 @@ import torch
 from torch.distributed import init_process_group, destroy_process_group
 
 from utils.utils import create_folder_if_not_exist, create_folder_overwrite_if_exist
-from data.data import AutoRegressDataset, AdditionDataset, AdditionTokenizer
+from data.data import AutoRegressDataset, AdditionDataset, AdditionTokenizer, MultiplicationDataset, MultiplicationTokenizer
 from train.config import parse_args
 from train.trainer import Trainer
 import setproctitle
@@ -32,18 +32,33 @@ def get_args_ready(WORLD_SIZE:int, RANK:int):
     args.world_size = WORLD_SIZE
 
     # model setting
-    args.model = 'NanoGPT'
+    args.model = 'NanoGPT'                # NanoGPT, llama
     args.n_position = 1024
-    args.n_layer = 4
-    args.n_head = 8
-    args.n_embd = 256
-    args.n_inner = 4 * args.n_embd
-    args.dropout = 0.0                          # for pretraining 0 is good, for finetuning try 0.1+
-    args.init_from = None                       # training from scratch or resuming from latest snapshot within out-dir
+    args.n_layer = 10
+    args.n_q_head = 12
+    args.n_kv_head = 12
+    args.n_head = args.n_q_head
+    args.n_embed = 768
+    args.n_inner = 4 * args.n_embed
+    args.dropout = 0.0                  # for pretraining 0 is good, for finetuning try 0.1+
+    args.dropout_attn = 0.0             # for pretraining 0 is good, for finetuning try 0.1+
+    args.init_from = None               # training from scratch or resuming from latest snapshot within out-dir
 
     # data setting
-    args.adder_ndigit = 2                        # digits num for adder dataset
-
+    args.math_vocab = {'=': 10, '+': 11, 'x': 12, }     # digits num for adder and multiplier dataset
+    args.adder_ndigit = 3                               # digits num for adder dataset
+    args.multiplier_ndigit = args.adder_ndigit          # digits num for multiplier dataset
+    args.adder_use_format = True
+    args.multiplier_use_format = True
+    args.adder_format_vocab = None if not args.adder_use_format else {
+        '=': args.math_vocab['='], 
+        '+': args.math_vocab['+']
+    }  
+    args.multiplier_format_vocab = None if not args.multiplier_use_format else {
+        '=': args.math_vocab['='], 
+        'x': args.math_vocab['x']
+    }
+    
     # optimizer setting
     args.lr_begin = 0                                       
     args.lr_max = 1e-3                          # with baby networks can afford to go a bit higher
@@ -60,9 +75,9 @@ def get_args_ready(WORLD_SIZE:int, RANK:int):
     args.adam_beta2 = 0.99                      # make a bit bigger because number of tokens per iter is small
 
     # training setting
-    args.batch_size_per_gpu = 64                                            # training batch_size (per GPU)
+    args.batch_size_per_gpu = 256                                           # training batch_size (per GPU)
     args.batch_size = args.batch_size_per_gpu * WORLD_SIZE * args.ga_begin  # equivalent training batch_size
-    args.batch_num = 64 * args.ga_begin
+    args.batch_num = 64 * args.ga_begin                                     # a macro_batch consists of 'batch_num' batches and serves a similar purpose as an 'epoch' in training. It's used for learning rate and weight decay scheduling.
     args.train_iters = 256 * args.batch_num                                 # total batch_num
     args.eval_batch_num = 20
     args.eval_batch_size_per_gpu = 64
@@ -82,7 +97,7 @@ def get_args_ready(WORLD_SIZE:int, RANK:int):
     args.add_bias = False                       # True: bias in Linears and LayerNorms, like GPT-2. False: a bit better and faster
     args.override_opt_param_scheduler = True   # Set 'True' to override all scheduler setting, otherwise the scheduler will be set by checkpoint
     args.skip_first_eval = False                # skip the first evaluation to at batch 0
-    args.wandb = False                           # use wandb to log training info
+    args.wandb = True                           # use wandb to log training info
     args.use_early_stopping = True              # use the early stopping mechanism to aviod overfitting
     args.save_ckpt = True                       # update ckpt by save_interval and save_strategy
     args.save_ckpt_num = 3                      # the number of ckpt to save, 0 for saving all ckpt
@@ -91,22 +106,33 @@ def get_args_ready(WORLD_SIZE:int, RANK:int):
     args.use_kvcache = False                    # use kv cache to speed up evaluation          
     args.use_amp = False                        # use automatic mixed precision (AMP) to speed up training, which may hurt the performance
     args.compile = False                        # compile the model to speed up training
-    args.eval_interval = args.batch_num * 1     # keep frequent because we'll overfit
-    args.eval_score_interval = args.batch_num * 2
+    args.eval_interval = args.batch_num * 4     # keep frequent because we'll overfit
+    args.eval_score_interval = args.batch_num * 4
     args.save_interval = args.batch_num * 1   
     args.compile = args.compile and torch.__version__ >= "2.0"  # only support torch 2.0+
 
     # IO setting
-    args.exp_name = 'test'
-    args.dataset = 'adder'           # tinystory, shakespeare_char, adder
+    # args.dataset = 'tinystory'                  # tinystory, shakespeare_char, adder, multiplier
+    # args.exp_name = 'TinyStory'
+    
+    # args.dataset = 'shakespeare_char'
+    # args.exp_name = 'ShakespeareChar'
+
+    args.dataset = 'adder'                      
+    args.exp_name = f'Adder({args.adder_ndigit}_format)' if args.adder_use_format else f'Adder({args.adder_ndigit})'
+    
+    # args.dataset = 'multiplier'                  
+    # args.exp_name = f'Multiplier({args.multiplier_ndigit}_format)' if args.multiplier_use_format else f'Multiplier({args.multiplier_ndigit})'
+    
+    # args.exp_name = 'Debug'
     args.wandb_project = 'CleanGPT'
-    args.exp_profile = f'{args.exp_name}_{args.n_position}_{args.n_embd}_{args.n_head}_{args.n_layer}'
+    args.exp_profile = f'{args.exp_name}_{args.model}_{args.n_position}_{args.n_embed}_{args.n_head}_{args.n_layer}'
     args.exp_profile = f'{args.exp_profile}_compiled' if args.compile else args.exp_profile
     args.exp_profile = f'{args.exp_profile}_ampd' if args.use_amp else args.exp_profile
     args.out_dir = f'{base_path}/out/{args.exp_profile}'
 
     # assert some hyper paras
-    assert args.dataset in ['tinystory', 'shakespeare_char', 'adder'], f"dataset {args.dataset} not supported"
+    assert args.dataset in ['tinystory', 'shakespeare_char', 'adder', 'multiplier'], f"dataset {args.dataset} not supported"
     assert args.train_iters % args.batch_grad_accum_step == 0
     assert args.train_iters % args.eval_interval == 0
     assert args.train_iters % args.save_interval == 0
@@ -137,11 +163,17 @@ def load_dataset(args):
             tokenizer = None
             args.vocab_size = meta['vocab_size']
     elif args.dataset == 'adder':
-        dataset_train = AdditionDataset(args.adder_ndigit, 'train')
-        dataset_val = AdditionDataset(args.adder_ndigit, 'val')
-        dataset_test = AdditionDataset(args.adder_ndigit, 'test')
-        tokenizer = AdditionTokenizer(args.adder_ndigit)
-        args.vocab_size = tokenizer.vocab_size
+        dataset_train = AdditionDataset(args.adder_ndigit, 'train', format_vocab=args.adder_format_vocab)
+        dataset_val = AdditionDataset(args.adder_ndigit, 'val', format_vocab=args.adder_format_vocab)
+        dataset_test = AdditionDataset(args.adder_ndigit, 'test', format_vocab=args.adder_format_vocab)
+        tokenizer = AdditionTokenizer(args.adder_ndigit, format_vocab=args.adder_format_vocab)
+        args.vocab_size = 10 + len(args.math_vocab) if args.adder_use_format else 10
+    elif args.dataset == 'multiplier':
+        dataset_train = MultiplicationDataset(args.adder_ndigit, 'train', format_vocab=args.multiplier_format_vocab)
+        dataset_val = MultiplicationDataset(args.adder_ndigit, 'val', format_vocab=args.multiplier_format_vocab)
+        dataset_test = MultiplicationDataset(args.adder_ndigit, 'test', format_vocab=args.multiplier_format_vocab)
+        tokenizer = MultiplicationTokenizer(args.adder_ndigit, format_vocab=args.multiplier_format_vocab)
+        args.vocab_size = 10 + len(args.math_vocab) if args.adder_use_format else 10
     else:
         raise ValueError(f"dataset {args.dataset} not supported")
     
