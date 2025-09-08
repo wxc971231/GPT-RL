@@ -143,7 +143,7 @@ class Evaluater:
             assert sample == False, "Sample mode is not supported for multiplier dataset"
             correct_rate = eval_score_multiplier(self.model, self.tokenizer, problem_dataloader, total, desc)
             return correct_rate
-        elif self.args.dataset in ['tinystory', 'shakespeare_char']:
+        elif self.args.dataset in ['tinystory',]:
             return 0
         else:
             raise Exception(f"Unknown dataset: {self.args.dataset}")

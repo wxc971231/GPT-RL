@@ -35,11 +35,6 @@ def load_model(out_path=None):
             meta_data = pickle.load(f)
             tokenizer = meta_data['tokenizer']
             decoder = None
-    elif dataset_name == 'shakespeare_char':
-        with open(meta_path, 'rb') as f:
-            meta_data = pickle.load(f)
-            tokenizer = meta_data['stoi']
-            decoder = meta_data['itos']
     elif dataset_name == 'adder':
         tokenizer = AdditionTokenizer(config['adder_ndigit'], config['adder_format_vocab'])
         decoder = None

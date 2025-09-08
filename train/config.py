@@ -23,7 +23,7 @@ def get_parser_for_basic_args():
         help="The path of output, where the checkpoints and logs will be saved.",
     )
     parser.add_argument(
-        "--dataset", type=str, default="shakespeare_char",
+        "--dataset", type=str, default="adder",
         help="The dataset name, which is a floder",
     )
     parser.add_argument(
@@ -39,7 +39,7 @@ def get_parser_for_basic_args():
         help="The name of this experiment with more details, which will be used to construct the ckpt storage path.",
     )
     parser.add_argument(
-        "--wandb-project", type=str, default="shakespeare_char",
+        "--wandb-project", type=str, default=f"GPT-RL",
         help="The project name on wandb",
     )
     parser.add_argument(

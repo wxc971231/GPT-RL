@@ -73,7 +73,7 @@ def build_dataloader(args, dataset:AutoRegressDataset, dataset_type:str='train',
         drop_last=False
     )
 
-    if args.dataset in ['tinystory', 'shakespeare_char']:
+    if args.dataset in ['tinystory',]:
         collate_func = lambda batch: collate_fn(batch, dataset.data_path, dataset.n_position)
     elif args.dataset in ['adder', 'multiplier']:
         collate_func = None

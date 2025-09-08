@@ -11,7 +11,7 @@ from utils.utils_model import load_model
 from eval.evaluater import Evaluater
 from data.data import AutoRegressDataset, AdditionDataset, AdditionTokenizer, MultiplicationDataset, MultiplicationTokenizer
 import setproctitle
-setproctitle.setproctitle("CleanGPT@Debug")
+setproctitle.setproctitle("RL-GPT@Debug")
 
 def ddp_setup():
     num_cores = os.cpu_count()
@@ -23,7 +23,6 @@ def ddp_setup():
     torch.cuda.set_device(int(os.environ.get("RANK", default='0')))
 
 def get_args_ready(WORLD_SIZE:int, RANK:int):
-    ''' train a miniature character-level shakespeare model, good for debugging and playing on macbooks and such '''
     eval_args = parse_args()
     eval_args.seed = 42                      # random seeds
     eval_args.num_workers = 0                # dataloader workers
@@ -75,14 +74,6 @@ def get_eval_components(eval_args, RANK):
             meta = pickle.load(f)
             tokenizer = meta['tokenizer']
             args.vocab_size = tokenizer.vocab_size
-    elif args.dataset == 'shakespeare_char':
-        dataset_train = AutoRegressDataset(args, f'{base_path}/data/shakespeare_char/train.npy')
-        dataset_val = AutoRegressDataset(args, f'{base_path}/data/shakespeare_char/val.npy')
-        dataset_test = None
-        with open(os.path.join(f'{base_path}/data/{args.dataset}/meta.pkl'), 'rb') as f:
-            meta = pickle.load(f)
-            tokenizer = None
-            args.vocab_size = meta['vocab_size']
     elif args.dataset == 'adder':
         dataset_train = AdditionDataset(args.adder_ndigit, 'train', format_vocab=args.adder_format_vocab)
         dataset_val = AdditionDataset(args.adder_ndigit, 'val', format_vocab=args.adder_format_vocab)

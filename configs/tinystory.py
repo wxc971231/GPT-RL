@@ -75,7 +75,7 @@ class TinyStoryNanoGPTConfig(BaseExperimentConfig):
         args.save_strategy = 'best'                 # 'best' or 'interval'
         
         # IO setting
-        args.wandb_project = 'CleanGPT'
+        args.wandb_project = 'RL-GPT'
         args.exp_name = 'TinyStory'
         args.exp_profile = f'{args.exp_name}_{args.model}_{args.n_position}_{args.n_embed}_{args.n_head}_{args.n_layer}'
         args.exp_profile = f'{args.exp_profile}_compiled' if args.compile else args.exp_profile
@@ -154,7 +154,7 @@ class TinyStoryLlamaConfig(BaseExperimentConfig):
         
         # IO setting
         args.exp_name = 'TinyStory'
-        args.wandb_project = 'CleanGPT'
+        args.wandb_project = 'RL-GPT'
         args.exp_profile = f'{args.exp_name}_{args.model}_{args.n_position}_{args.n_embed}_{args.n_head}_{args.n_layer}'
         args.exp_profile = f'{args.exp_profile}_compiled' if args.compile else args.exp_profile
         args.exp_profile = f'{args.exp_profile}_ampd' if args.use_amp else args.exp_profile

@@ -213,12 +213,12 @@ class NanoGPT(nn.Module):
             logits = self.lm_head(x)                    # (batch_size, seq_len, vocab_size)
             
             if self.config.mask_out_token is None:
-                loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
+                loss = F.cross_entropy(logits.reshape(-1, logits.size(-1)), targets.reshape(-1), ignore_index=-1)
             else:
                 # mask out loss contributions from padding tokens
-                loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1, reduction='none')
+                loss = F.cross_entropy(logits.reshape(-1, logits.size(-1)), targets.reshape(-1), ignore_index=-1, reduction='none')
                 mask = (targets != self.config.mask_out_token).float()
-                loss = (loss * mask.view(-1)).sum() / mask.sum()
+                loss = (loss * mask.reshape(-1)).sum() / mask.sum()
         else:
             # inference-time mini-optimization: only forward the lm_head on the very last position
             # note: using list [-1] to preserve the time dim

@@ -16,7 +16,7 @@ from data.data import AutoRegressDataset, AdditionDataset, AdditionTokenizer, Mu
 from train.trainer import Trainer
 from configs import get_experiment_config
 import setproctitle
-setproctitle.setproctitle("CleanGPT@Debug")
+setproctitle.setproctitle("RL-GPT@Debug")
 
 def ddp_setup():
     num_cores = os.cpu_count()
@@ -27,15 +27,14 @@ def ddp_setup():
     init_process_group(backend="nccl")              # nccl for linux, gloo for windows
     torch.cuda.set_device(int(os.environ.get("RANK", default='0')))
 
-def get_args_ready(experiment_name:str, RANK:int):
-    ''' train a miniature character-level shakespeare model, good for debugging and playing on macbooks and such '''
-    args = get_experiment_config(experiment_name)
+def get_args_ready(exp_setting:str, RANK:int):
+    args = get_experiment_config(exp_setting)
     clean_print(f'Exp Profile: {args.exp_profile}', RANK, '[Trainer]')
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     args.out_dir = f'{base_path}/out/{args.exp_name}/{args.exp_profile}/{timestamp}'
     
     # assert some hyper paras
-    assert args.dataset in ['tinystory', 'shakespeare_char', 'adder', 'multiplier'], f"dataset {args.dataset} not supported"
+    assert args.dataset in ['tinystory', 'adder', 'multiplier'], f"dataset {args.dataset} not supported"
     assert args.train_iters % args.eval_interval == 0
     assert args.train_iters % args.save_interval == 0
 
@@ -56,14 +55,6 @@ def load_dataset(args):
             meta = pickle.load(f)
             tokenizer = meta['tokenizer']
             args.vocab_size = tokenizer.vocab_size
-    elif args.dataset == 'shakespeare_char':
-        dataset_train = AutoRegressDataset(args, f'{base_path}/data/shakespeare_char/train.npy')
-        dataset_val = AutoRegressDataset(args, f'{base_path}/data/shakespeare_char/val.npy')
-        dataset_test = None
-        with open(os.path.join(f'{base_path}/data/{args.dataset}/meta.pkl'), 'rb') as f:
-            meta = pickle.load(f)
-            tokenizer = None
-            args.vocab_size = meta['vocab_size']
     elif args.dataset == 'adder':
         dataset_train = AdditionDataset(args.adder_ndigit, 'train', format_vocab=args.adder_format_vocab)
         dataset_val = AdditionDataset(args.adder_ndigit, 'val', format_vocab=args.adder_format_vocab)
@@ -71,11 +62,11 @@ def load_dataset(args):
         tokenizer = AdditionTokenizer(args.adder_ndigit, format_vocab=args.adder_format_vocab)
         args.vocab_size = 10 + len(args.math_vocab) if args.adder_use_format else 10
     elif args.dataset == 'multiplier':
-        dataset_train = MultiplicationDataset(args.adder_ndigit, 'train', format_vocab=args.multiplier_format_vocab)
-        dataset_val = MultiplicationDataset(args.adder_ndigit, 'val', format_vocab=args.multiplier_format_vocab)
-        dataset_test = MultiplicationDataset(args.adder_ndigit, 'test', format_vocab=args.multiplier_format_vocab)
-        tokenizer = MultiplicationTokenizer(args.adder_ndigit, format_vocab=args.multiplier_format_vocab)
-        args.vocab_size = 10 + len(args.math_vocab) if args.adder_use_format else 10
+        dataset_train = MultiplicationDataset(args.multiplier_ndigit, 'train', format_vocab=args.multiplier_format_vocab)
+        dataset_val = MultiplicationDataset(args.multiplier_ndigit, 'val', format_vocab=args.multiplier_format_vocab)
+        dataset_test = MultiplicationDataset(args.multiplier_ndigit, 'test', format_vocab=args.multiplier_format_vocab)
+        tokenizer = MultiplicationTokenizer(args.multiplier_ndigit, format_vocab=args.multiplier_format_vocab)
+        args.vocab_size = 10 + len(args.math_vocab) if args.multiplier_use_format else 10
     else:
         raise ValueError(f"dataset {args.dataset} not supported")
     
@@ -107,8 +98,11 @@ if __name__ == "__main__":
     torch.backends.cudnn.allow_tf32 = True 
     
     # get hyper paras ready
-    experiment_name = 'TinyStory_Llama'
-    args = get_args_ready(experiment_name, RANK)
+    exp_setting = {
+        'name': 'Multiplier_SFT',
+        'model': 'llama'
+    }
+    args = get_args_ready(exp_setting, RANK)
 
     # build training objs
     dataset_dict, tokenizer = load_dataset(args)
