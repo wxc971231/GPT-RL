@@ -99,10 +99,16 @@ if __name__ == "__main__":
     
     # get hyper paras ready
     exp_setting = {
-        'name': 'Multiplier_SFT',
-        'model': 'llama'
+        'name': 'TinyStory_SFT',
+        'model': 'NanoGPT'
     }
     args = get_args_ready(exp_setting, RANK)
+
+    # custom setting
+    args.wandb_project = 'RL-GPT'
+    args.init_from = None
+    #args.out_dir = '/data1/weixc/GPT-RL/out/TinyStory/TinyStory_llama_1024_512_12_10/20250909_115612'
+    start_timestep = args.out_dir[args.out_dir.rfind('/')+1:]
 
     # build training objs
     dataset_dict, tokenizer = load_dataset(args)
@@ -126,7 +132,7 @@ if __name__ == "__main__":
             with wandb.init(
                 project=args.wandb_project,
                 group = args.exp_profile,
-                name = f"seed_{seed}",
+                name = start_timestep,
                 id = trianer.wandb_id,
                 resume = 'allow',
                 dir = f'{base_path}/Wandb',

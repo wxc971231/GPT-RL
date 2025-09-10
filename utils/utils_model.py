@@ -74,7 +74,7 @@ def load_model(out_path=None):
     ckpt_files = glob.glob(ckpt_dir)
     ckpt_files = sorted(ckpt_files, key=lambda x: float(os.path.basename(x).split('_')[0]))
     best_ckpt_path = ckpt_files[0]
-    ckpt_model_state = torch.load(best_ckpt_path, map_location=f"cuda:0")
+    ckpt_model_state = torch.load(best_ckpt_path, map_location=f"cuda:0", weights_only=True)
     model.load_state_dict(remove_compiled_prefix(ckpt_model_state))
     clean_print(f"Load {best_ckpt_path}", local_rank, '[Model]')
 

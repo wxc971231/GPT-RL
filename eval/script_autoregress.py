@@ -31,7 +31,7 @@ def generate_text(model, dataset_name, tokenizer, decoder, prompt, max_length=50
 def main():
     # setting
     device = 'cuda:0'
-    out_path = f"{base_path}/out/TinyStory/TinyStory_llama_1024_512_12_10/20250814_102621"
+    out_path = "/data1/weixc/GPT-RL/out/TinyStory/TinyStory_llama_1024_512_12_10/20250909_115612"
     prompt = "Once upon a time, "
     temperature = 0.2
     top_k = None

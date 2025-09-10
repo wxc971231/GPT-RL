@@ -51,7 +51,12 @@ if __name__ == '__main__':
 
     # Use llama2 tokenizer with 32k vocab size, the llama2 version with 128k is too large
     dataset_saved_dir = os.path.dirname(os.path.abspath(__file__))
-    tokenizer = AutoTokenizer.from_pretrained('NousResearch/Llama-2-7b-hf', cache_dir=dataset_saved_dir, force_download=False, resume_download=None)
+    # Try to load from local cache first, if not available, try online
+    try:
+        tokenizer = AutoTokenizer.from_pretrained('NousResearch/Llama-2-7b-hf', cache_dir=dataset_saved_dir, local_files_only=True)
+    except (OSError, ValueError):
+        print("Local tokenizer not found, trying to download from Hugging Face...")
+        tokenizer = AutoTokenizer.from_pretrained('NousResearch/Llama-2-7b-hf', cache_dir=dataset_saved_dir, force_download=False, mirror='https://hf-mirror.com')
     
     # tokenize the dataset
     seq_len = 1024

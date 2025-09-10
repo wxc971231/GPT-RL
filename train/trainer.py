@@ -72,10 +72,10 @@ class Trainer:
             amp_dtype = torch.bfloat16 if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else torch.float16
             device_type = 'cuda' if torch.cuda.is_available() else 'cpu'
             self.ctx = torch.amp.autocast(device_type=device_type, dtype=amp_dtype)
-            self.scaler = torch.cuda.amp.GradScaler(enabled=(amp_dtype==torch.float16)) # bfloat16 doesn't need GradScaler cause it can be calculated in hardware drictly   
+            self.scaler = torch.amp.GradScaler('cuda', enabled=(amp_dtype==torch.float16)) # bfloat16 doesn't need GradScaler cause it can be calculated in hardware drictly   
         else:
             self.ctx = nullcontext()                                                    # null context
-            self.scaler = torch.cuda.amp.GradScaler(enabled=False)                      # no-op
+            self.scaler = torch.amp.GradScaler('cuda', enabled=False)                      # no-op
 
         # eval setting
         self.eval_setting = {}
@@ -121,7 +121,7 @@ class Trainer:
             try:
                 # try to resume training from the latest snapshot
                 snapshot_path = f'{self.args.out_dir}/snapshot_seed{self.seed}.pt'
-                snapshot_data = torch.load(snapshot_path, map_location=f"cuda:{self.local_rank}")
+                snapshot_data = torch.load(snapshot_path, map_location=f"cuda:{self.local_rank}", weights_only=True)
                 snapshot = Snapshot(**snapshot_data)
                 self.raw_model.load_state_dict(remove_compiled_prefix(snapshot.model_state))
                 self.optimizer.load_state_dict(snapshot.optimizer_state)

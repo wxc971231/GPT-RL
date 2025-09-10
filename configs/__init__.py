@@ -5,8 +5,7 @@ from configs.base import BaseExperimentConfig
 
 # 实验注册表
 EXPERIMENT_REGISTRY = {
-    'TinyStory_NanoGPT': TinyStoryNanoGPTConfig,
-    'TinyStory_Llama': TinyStoryLlamaConfig,
+    'TinyStory_SFT': lambda model: TinyStoryLlamaConfig() if model == 'llama' else TinyStoryNanoGPTConfig(),
     'Adder_SFT': lambda model: AdderSFTConfig(model),
     'Adder_RL': lambda model: AdderRLConfig(model),
     'Multiplier_SFT': lambda model: MultiplierSFTConfig(model),

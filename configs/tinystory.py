@@ -23,7 +23,7 @@ class TinyStoryNanoGPTConfig(BaseExperimentConfig):
         args.n_inner = 4 * args.n_embed
         args.dropout = 0.0                  # for pretraining 0 is good, for finetuning try 0.1+
         args.dropout_attn = 0.0             # for pretraining 0 is good, for finetuning try 0.1+
-        args.init_from = None               # training from scratch or resuming from latest snapshot within out-dir
+        args.init_from = None               # training from given ckpt
         
         # data setting
         args.dataset = "tinystory"
@@ -44,7 +44,7 @@ class TinyStoryNanoGPTConfig(BaseExperimentConfig):
         args.adam_beta2 = 0.99                      # make a bit bigger because number of tokens per iter is small
 
         # training setting
-        args.batch_size_per_gpu = 32                                            # training batch_size (per GPU)
+        args.batch_size_per_gpu = 16                                            # training batch_size (per GPU)
         args.batch_size = args.batch_size_per_gpu * WORLD_SIZE * args.ga_begin  # equivalent training batch_size
         args.batch_num = 64 * args.ga_begin
         args.train_iters = 256 * args.batch_num                                 # total batch_num
@@ -53,8 +53,8 @@ class TinyStoryNanoGPTConfig(BaseExperimentConfig):
         args.clip_grad = 1.0                        # clip gradients at this value, or disable if == 0.0
             
         # eval setting
-        args.eval_batch_num = 20
-        args.eval_batch_size_per_gpu = 64
+        args.eval_batch_num = 40
+        args.eval_batch_size_per_gpu = 32
         args.eval_batch_size = args.eval_batch_size_per_gpu * WORLD_SIZE
         args.eval_interval = args.batch_num * 1     # keep frequent because we'll overfit
 
@@ -101,7 +101,7 @@ class TinyStoryLlamaConfig(BaseExperimentConfig):
         args.n_embed = 512
         args.dropout = 0.0                  # for pretraining 0 is good, for finetuning try 0.1+
         args.dropout_attn = 0.0             # for pretraining 0 is good, for finetuning try 0.1+
-        args.init_from = None               # training from scratch or resuming from latest snapshot within out-dir
+        args.init_from = None               # training from given ckpt
         
         # data setting
         args.dataset = "tinystory"
@@ -122,7 +122,7 @@ class TinyStoryLlamaConfig(BaseExperimentConfig):
         args.adam_beta2 = 0.99                      # make a bit bigger because number of tokens per iter is small
 
         # training setting
-        args.batch_size_per_gpu = 32                                            # training batch_size (per GPU)
+        args.batch_size_per_gpu = 16                                            # training batch_size (per GPU)
         args.batch_size = args.batch_size_per_gpu * WORLD_SIZE * args.ga_begin  # equivalent training batch_size
         args.batch_num = 64 * args.ga_begin
         args.train_iters = 256 * args.batch_num                                 # total batch_num
@@ -131,8 +131,8 @@ class TinyStoryLlamaConfig(BaseExperimentConfig):
         args.clip_grad = 1.0                        # clip gradients at this value, or disable if == 0.0
             
         # eval setting
-        args.eval_batch_num = 10
-        args.eval_batch_size_per_gpu = 128
+        args.eval_batch_num = 40
+        args.eval_batch_size_per_gpu = 32
         args.eval_batch_size = args.eval_batch_size_per_gpu * WORLD_SIZE
         args.eval_interval = args.batch_num * 1     # keep frequent because we'll overfit
 
